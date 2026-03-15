@@ -6,56 +6,53 @@ import docx
 import time
 from PIL import Image
 
-# --- ১. অ্যাপ ও পাসওয়ার্ড সেটআপ ---
-st.set_page_config(page_title="Nexus Prime Empire", page_icon="🦾", layout="wide")
+# --- ১. অ্যাপ সেটআপ ---
+st.set_page_config(page_title="Nexus Prime Ultra", page_icon="🦾", layout="wide")
 
 if "password" not in st.session_state: 
     st.session_state["password"] = "Emonkhan1995@@"
 
 def check_password():
     if "password_correct" not in st.session_state:
-        st.title("🛡️ NEXUS PRIME: SECURE LOGIN")
-        pwd = st.text_input("মাস্টারমাইন্ড পাসওয়ার্ডটি দিন:", type="password")
-        if st.button("Unlock Empire 🔓"):
+        st.title("🛡️ NEXUS PRIME: LOGIN")
+        pwd = st.text_input("মাস্টারমাইন্ড পাসওয়ার্ড:", type="password")
+        if st.button("Unlock"):
             if pwd == st.session_state["password"]:
                 st.session_state["password_correct"] = True
                 st.rerun()
-            else:
-                st.error("❌ ভুল পাসওয়ার্ড!")
+            else: st.error("❌ ভুল পাসওয়ার্ড!")
         return False
     return True
 
-# --- ২. মূল অ্যাপ ---
 if check_password():
+    # --- ২. এআই ইঞ্জিন: স্মার্ট অটো-ডিটেকশন ---
     genai.configure(api_key="AIzaSyDnV3MBfWvCvqq-e1zS95A3NCvzuhBsgiA")
     
-    # স্মার্ট মডেল লোডার (এটি ভুল নাম সংশোধন করবে)
-    def get_safe_model(model_name):
+    @st.cache_resource
+    def find_working_model():
+        """গুগলের সার্ভার থেকে বর্তমানে সচল মডেল খুঁজে বের করার মাস্টার ফাংশন"""
         try:
-            # যদি নামের শুরুতে models/ না থাকে তবে যোগ করা
-            full_name = model_name if model_name.startswith("models/") else f"models/{model_name}"
-            return genai.GenerativeModel(full_name)
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            # ১. প্রথমে ফ্ল্যাশ মডেল খোঁজা (দ্রুত কাজের জন্য)
+            for m in available_models:
+                if "flash" in m: return m
+            # ২. না পেলে প্রো মডেল খোঁজা
+            for m in available_models:
+                if "pro" in m: return m
+            # ৩. কিছুই না পেলে লিস্টের প্রথমটি
+            return available_models[0]
         except:
-            return genai.GenerativeModel("models/gemini-1.5-flash-latest")
+            return "models/gemini-pro" # একদম শেষ ভরসা
 
-    if "messages" not in st.session_state: st.session_state.messages = []
-    
-    # সচল মডেল লিস্ট
-    try:
-        raw_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        display_models = raw_models if raw_models else ["gemini-1.5-flash", "gemini-1.5-pro"]
-    except:
-        display_models = ["gemini-1.5-flash", "gemini-1.5-pro"]
+    active_model_id = find_working_model()
+    model = genai.GenerativeModel(active_model_id)
 
-    # --- ৩. সাইডবার ---
-    st.sidebar.title("⚙️ মাস্টার প্যানেল")
-    selected_name = st.sidebar.selectbox("ইঞ্জিন নির্বাচন করুন:", display_models)
-    temp = st.sidebar.slider("সৃজনশীলতা (Creativity):", 0.0, 1.0, 0.7)
+    # --- ৩. সাইডবার ও ফাইল প্রসেসিং ---
+    st.sidebar.title("⚙️ কন্ট্রোল প্যানেল")
+    st.sidebar.info(f"অ্যাক্টিভ ইঞ্জিন: {active_model_id}")
     
-    st.sidebar.markdown("---")
-    st.sidebar.title("📚 ডকুইমেন্ট ও ভিশন")
-    uploaded_files = st.sidebar.file_uploader("বই বা ফাইল (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
-    uploaded_img = st.sidebar.file_uploader("ছবি বিশ্লেষণ (Vision)", type=["jpg", "png", "jpeg"])
+    temp = st.sidebar.slider("সৃজনশীলতা:", 0.0, 1.0, 0.7)
+    uploaded_files = st.sidebar.file_uploader("বই আপলোড করুন", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     
     full_text = ""
     if uploaded_files:
@@ -66,74 +63,43 @@ if check_password():
             elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 doc = docx.Document(file)
                 for p in doc.paragraphs: full_text += p.text + "\n"
-            else:
-                full_text += str(file.read(), "utf-8")
-        st.sidebar.success("ডকুইমেন্ট রেডি!")
+        st.sidebar.success("বই মেমোরিতে লোড হয়েছে!")
 
-    if st.sidebar.button("Logout 🚪"):
-        del st.session_state["password_correct"]
-        st.rerun()
-
-    # --- ৪. মেইন ইন্টারফেস ---
+    # --- ৪. মেইন ড্যাশবোর্ড ---
     st.title("🛡️ NEXUS PRIME: Content Empire")
-    tab_chat, tab_studio, tab_settings = st.tabs(["💬 প্রো চ্যাট মোড", "🖋️ রাইটার্স ল্যাব", "⚙️ সেটিংস"])
+    tab1, tab2 = st.tabs(["💬 চ্যাট মোড", "🖋️ রাইটার্স ল্যাব"])
 
-    # --- ৫. চ্যাট মোড ---
-    with tab_chat:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+    with tab1:
+        if "messages" not in st.session_state: st.session_state.messages = []
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
         if prompt := st.chat_input("এআই-কে কমান্ড দিন..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                msg_placeholder = st.empty()
+                res_box = st.empty()
                 full_res = ""
-                chat_model = get_safe_model(selected_name)
-                inputs = [f"Context: {full_text[:12000]}\nUser: {prompt}"]
-                if uploaded_img: inputs.append(Image.open(uploaded_img))
-                
+                # এখানে মডেল সরাসরি কল করা হচ্ছে
                 try:
-                    response = chat_model.generate_content(inputs, generation_config={"temperature": temp}, stream=True)
+                    response = model.generate_content(f"Context: {full_text[:10000]}\nUser: {prompt}", stream=True)
                     for chunk in response:
                         full_res += chunk.text
-                        msg_placeholder.markdown(full_res + "▌")
-                    msg_placeholder.markdown(full_res)
+                        res_box.markdown(full_res + "▌")
+                    res_box.markdown(full_res)
                     st.session_state.messages.append({"role": "assistant", "content": full_res})
                 except Exception as e:
-                    st.error(f"সার্ভার সমস্যা: {e}")
+                    st.error(f"সার্ভার এরর: {e}")
 
-    # --- ৬. রাইটার্স ল্যাব (এখানেই আপনার এরর আসছিল) ---
-    with tab_studio:
-        st.subheader("🖋️ স্পেশালাইজড রাইটিং টুলস")
-        c1, c2 = st.columns(2)
-        studio_model = get_safe_model(selected_name) # এখানে স্মার্ট লোডার ব্যবহার করা হয়েছে
-        
-        with c1:
-            if st.button("📖 বইয়ের চ্যাপ্টার প্ল্যান করো"):
-                with st.spinner("প্ল্যানিং চলছে..."):
-                    try:
-                        res = studio_model.generate_content(f"বইয়ের নাম: {full_text[:500]}। ১০টি চ্যাপ্টার আউটলাইন দাও।")
-                        st.info(res.text)
-                    except Exception as e: st.error(f"ভুল: {e}")
-        
-        with c2:
-            if st.button("👥 ক্যারেক্টার প্রোফাইল তৈরি করো"):
-                with st.spinner("চরিত্র তৈরি হচ্ছে..."):
-                    try:
-                        res = studio_model.generate_content("একটি রহস্যময় চরিত্রের প্রোফাইল দাও।")
-                        st.success(res.text)
-                    except Exception as e: st.error(f"ভুল: {e}")
-
-    # --- ৭. সেটিংস ---
-    with tab_settings:
-        st.subheader("⚙️ অ্যাকাউন্ট সেটিংস")
-        new_pwd = st.text_input("নতুন পাসওয়ার্ড সেট করুন:", type="password")
-        if st.button("Update Password 🔐"):
-            st.session_state["password"] = new_pwd
-            st.success(f"পাসওয়ার্ড আপডেট হয়েছে! নতুন: {new_pwd}")
+    with tab2:
+        st.subheader("🖋️ স্পেশালাইজড টুলস")
+        if st.button("📖 চ্যাপ্টার আউটলাইন তৈরি করো"):
+            with st.spinner("এআই ভাবছে..."):
+                try:
+                    res = model.generate_content("বইয়ের জন্য ১০টি চমৎকার চ্যাপ্টার আউটলাইন দাও।")
+                    st.write(res.text)
+                except Exception as e: st.error(f"এরর: {e}")
 
     st.markdown("---")
-    st.caption(f"Nexus Prime Pro | Developed by Harun Mastermind | 2026")
+    st.caption(f"Nexus Prime Pro | Engine: {active_model_id} | 2026")
