@@ -24,35 +24,31 @@ def check_password():
     return True
 
 if check_password():
-    # --- ২. এআই ইঞ্জিন কনফিগারেশন (মাস্টার ফিক্স) ---
-    # এখানে আমরা সরাসরি এপিআই কী সেট করছি
+    # --- ২. এআই ইঞ্জিন কনফিগারেশন (সরাসরি ফিক্স) ---
     genai.configure(api_key="AIzaSyDnV3MBfWvCvqq-e1zS95A3NCvzuhBsgiA")
     
-    # এটি আপনার এপিআই কী-র জন্য সচল মডেলের নামগুলো একদম পরিষ্কার করে নিয়ে আসবে
+    # এটি আপনার পিসিতে থাকা সব মডেলকে অটো-স্ক্যান করবে
     @st.cache_resource
-    def get_clean_models():
+    def list_valid_models():
         try:
-            # সরাসরি নামগুলো সংগ্রহ করা (models/ বাদ দিয়ে)
-            m_list = []
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    # আমরা শুধু মূল নামটি নিব যেন ভার্সন সমস্যা না হয়
-                    clean_name = m.name.split('/')[-1]
-                    m_list.append(clean_name)
-            return m_list
+            # সরাসরি নামগুলো সংগ্রহ করা
+            return [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         except:
-            return ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+            # যদি স্ক্যান ফেইল করে তবে এই ৩টি স্ট্যান্ডার্ড নাম ব্যবহার করবে
+            return ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
 
-    active_models = get_clean_models()
+    available_models = list_valid_models()
 
-    # --- ৩. সাইডবার ---
-    st.sidebar.title("⚙️ কন্ট্রোল প্যানেল")
-    selected_model_name = st.sidebar.selectbox("ইঞ্জিন বেছে নিন:", active_models)
+    # --- ৩. সাইডবার কন্ট্রোল ---
+    st.sidebar.title("⚙️ মাস্টার প্যানেল")
     
-    st.sidebar.info(f"অ্যাক্টিভ: {selected_model_name}")
-    temp = st.sidebar.slider("সৃজনশীলতা:", 0.0, 1.0, 0.7)
+    # ইউজারকে সঠিক মডেল বেছে নেওয়ার সুযোগ দেওয়া
+    selected_model_path = st.sidebar.selectbox("ইঞ্জিন নির্বাচন করুন:", available_models)
     
-    uploaded_files = st.sidebar.file_uploader("বই বা ফাইল আপলোড করুন", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+    st.sidebar.success(f"অ্যাক্টিভ: {selected_model_path}")
+    temp = st.sidebar.slider("সৃজনশীলতা (Creativity):", 0.0, 1.0, 0.7)
+    
+    uploaded_files = st.sidebar.file_uploader("বই বা ফাইল (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     
     full_text = ""
     if uploaded_files:
@@ -63,51 +59,53 @@ if check_password():
             elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 doc = docx.Document(file)
                 for p in doc.paragraphs: full_text += p.text + "\n"
-        st.sidebar.success("বই মেমোরিতে লোড হয়েছে!")
+        st.sidebar.info("বই মেমোরিতে সেভ হয়েছে!")
 
-    # --- ৪. মেইন ড্যাশবোর্ড ---
+    # --- ৪. মেইন ইন্টারফেস (ট্যাব সিস্টেম) ---
     st.title("🛡️ NEXUS PRIME: Content Empire")
-    tab1, tab2 = st.tabs(["💬 চ্যাট মোড", "🖋️ রাইটার্স ল্যাব"])
+    tab_chat, tab_studio = st.tabs(["💬 প্রো চ্যাট মোড", "🖋️ রাইটার্স ল্যাব"])
 
-    # এখানে মডেল লোড করার সময় আমরা নির্দিষ্ট করে দিচ্ছি
-    try:
-        ai_model = genai.GenerativeModel(model_name=selected_model_name)
-    except:
-        ai_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    # এআই মডেল লোড করা (মাস্টার ফিক্স)
+    # আমরা এখানে সরাসরি models/ সহ পাথ ব্যবহার করছি যেন v1beta এরর না আসে
+    ai_instance = genai.GenerativeModel(model_name=selected_model_path)
 
-    with tab1:
+    # --- ৫. চ্যাট মোড ---
+    with tab_chat:
         if "messages" not in st.session_state: st.session_state.messages = []
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-        if prompt := st.chat_input("এআই-কে কমান্ড দিন..."):
+        if prompt := st.chat_input("এআই-কে জিজ্ঞাসা করুন..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                res_box = st.empty()
-                full_res = ""
+                res_placeholder = st.empty()
+                full_response = ""
                 try:
-                    # ফাইল থেকে তথ্য নিয়ে উত্তর
-                    context = f"Context: {full_text[:10000]}\n\n" if full_text else ""
-                    response = ai_model.generate_content(context + prompt, stream=True)
+                    context = f"Context: {full_text[:10000]}\n\nUser: " if full_text else ""
+                    # স্ট্রিমিং রেসপন্স
+                    response = ai_instance.generate_content(context + prompt, stream=True)
                     for chunk in response:
-                        full_res += chunk.text
-                        res_box.markdown(full_res + "▌")
-                    res_box.markdown(full_res)
-                    st.session_state.messages.append({"role": "assistant", "content": full_res})
+                        full_response += chunk.text
+                        res_placeholder.markdown(full_response + "▌")
+                    res_placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
                 except Exception as e:
-                    st.error(f"দুঃখিত, গুগল সার্ভারে সমস্যা হচ্ছে। দয়া করে অন্য একটি ইঞ্জিন ট্রাই করুন। এরর: {e}")
+                    st.error(f"এরর ধরা পড়েছে: {e}")
 
-    with tab2:
+    # --- ৬. রাইটার্স ল্যাব ---
+    with tab_studio:
         st.subheader("🖋️ স্পেশালাইজড টুলস")
         if st.button("📖 চ্যাপ্টার আউটলাইন তৈরি করো"):
-            with st.spinner("এআই জেনারেট করছে..."):
+            with st.spinner("মাস্টারমাইন্ড এআই জেনারেট করছে..."):
                 try:
-                    res = ai_model.generate_content("একটি চমৎকার বইয়ের ১০টি চ্যাপ্টার আউটলাইন দাও।")
-                    st.markdown(f"### আউটলাইন:\n{res.text}")
+                    # সরাসরি কন্টেন্ট জেনারেশন
+                    res = ai_instance.generate_content("একটি চমৎকার বইয়ের জন্য ১০টি আকর্ষণীয় চ্যাপ্টার আউটলাইন দাও।")
+                    st.success("আউটলাইন তৈরি সম্পন্ন!")
+                    st.markdown(res.text)
                 except Exception as e:
-                    st.error(f"এরর: {e}. সাইডবার থেকে অন্য ইঞ্জিন বেছে নিন।")
+                    st.error(f"দুঃখিত, এই ইঞ্জিনটি সাপোর্ট করছে না। সাইডবার থেকে অন্য একটি ইঞ্জিন (যেমন gemini-pro) বেছে নিন। এরর: {e}")
 
     st.markdown("---")
-    st.caption(f"Nexus Prime Pro | Powered by Harun Mastermind | 2026")
+    st.caption(f"Nexus Prime Pro | Developed by Harun Mastermind | Engine: {selected_model_path} | 2026")
