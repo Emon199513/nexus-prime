@@ -4,9 +4,8 @@ import base64
 import PyPDF2
 import docx
 import time
-from PIL import Image
 
-# --- ১. অ্যাপ সেটআপ ---
+# --- ১. অ্যাপ ও পাসওয়ার্ড সেটআপ ---
 st.set_page_config(page_title="Nexus Prime Ultra", page_icon="🦾", layout="wide")
 
 if "password" not in st.session_state: 
@@ -16,7 +15,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.title("🛡️ NEXUS PRIME: LOGIN")
         pwd = st.text_input("মাস্টারমাইন্ড পাসওয়ার্ড:", type="password")
-        if st.button("Unlock"):
+        if st.button("Unlock Empire 🔓"):
             if pwd == st.session_state["password"]:
                 st.session_state["password_correct"] = True
                 st.rerun()
@@ -25,34 +24,29 @@ def check_password():
     return True
 
 if check_password():
-    # --- ২. এআই ইঞ্জিন: স্মার্ট অটো-ডিটেকশন ---
+    # --- ২. এআই ইঞ্জিন: স্মার্ট স্ক্যানার ---
     genai.configure(api_key="AIzaSyDnV3MBfWvCvqq-e1zS95A3NCvzuhBsgiA")
     
+    # এটি আপনার API-র জন্য সচল মডেলগুলো খুঁজে বের করবে
     @st.cache_resource
-    def find_working_model():
-        """গুগলের সার্ভার থেকে বর্তমানে সচল মডেল খুঁজে বের করার মাস্টার ফাংশন"""
+    def get_available_models():
         try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            # ১. প্রথমে ফ্ল্যাশ মডেল খোঁজা (দ্রুত কাজের জন্য)
-            for m in available_models:
-                if "flash" in m: return m
-            # ২. না পেলে প্রো মডেল খোঁজা
-            for m in available_models:
-                if "pro" in m: return m
-            # ৩. কিছুই না পেলে লিস্টের প্রথমটি
-            return available_models[0]
-        except:
-            return "models/gemini-pro" # একদম শেষ ভরসা
+            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            return models
+        except Exception:
+            return ["models/gemini-1.5-flash", "models/gemini-1.5-pro"]
 
-    active_model_id = find_working_model()
-    model = genai.GenerativeModel(active_model_id)
+    active_models = get_available_models()
 
-    # --- ৩. সাইডবার ও ফাইল প্রসেসিং ---
+    # --- ৩. সাইডবার ও কন্ট্রোল ---
     st.sidebar.title("⚙️ কন্ট্রোল প্যানেল")
-    st.sidebar.info(f"অ্যাক্টিভ ইঞ্জিন: {active_model_id}")
+    # ইউজারকে অপশন দেওয়া যেন সে নিজেই সচল মডেল বেছে নিতে পারে
+    selected_model = st.sidebar.selectbox("সচল ইঞ্জিন বেছে নিন:", active_models)
     
-    temp = st.sidebar.slider("সৃজনশীলতা:", 0.0, 1.0, 0.7)
-    uploaded_files = st.sidebar.file_uploader("বই আপলোড করুন", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+    st.sidebar.info(f"অ্যাক্টিভ: {selected_model}")
+    temp = st.sidebar.slider("সৃজনশীলতা (Creativity):", 0.0, 1.0, 0.7)
+    
+    uploaded_files = st.sidebar.file_uploader("বই বা ফাইল আপলোড করুন", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     
     full_text = ""
     if uploaded_files:
@@ -69,6 +63,9 @@ if check_password():
     st.title("🛡️ NEXUS PRIME: Content Empire")
     tab1, tab2 = st.tabs(["💬 চ্যাট মোড", "🖋️ রাইটার্স ল্যাব"])
 
+    # এআই মডেল অবজেক্ট তৈরি
+    ai_model = genai.GenerativeModel(selected_model)
+
     with tab1:
         if "messages" not in st.session_state: st.session_state.messages = []
         for msg in st.session_state.messages:
@@ -81,25 +78,27 @@ if check_password():
             with st.chat_message("assistant"):
                 res_box = st.empty()
                 full_res = ""
-                # এখানে মডেল সরাসরি কল করা হচ্ছে
                 try:
-                    response = model.generate_content(f"Context: {full_text[:10000]}\nUser: {prompt}", stream=True)
+                    # ফাইল থেকে তথ্য নিয়ে উত্তর দেওয়া
+                    context = f"Context: {full_text[:12000]}\n\n" if full_text else ""
+                    response = ai_model.generate_content(context + prompt, stream=True)
                     for chunk in response:
                         full_res += chunk.text
                         res_box.markdown(full_res + "▌")
                     res_box.markdown(full_res)
                     st.session_state.messages.append({"role": "assistant", "content": full_res})
                 except Exception as e:
-                    st.error(f"সার্ভার এরর: {e}")
+                    st.error(f"দুঃখিত, এই মডেলটি এখন কাজ করছে না। দয়া করে সাইডবার থেকে অন্য একটি ইঞ্জিন বেছে নিন। এরর: {e}")
 
     with tab2:
-        st.subheader("🖋️ স্পেশালাইজড টুলস")
+        st.subheader("🖋️ স্পেশালাইজড রাইটিং টুলস")
         if st.button("📖 চ্যাপ্টার আউটলাইন তৈরি করো"):
             with st.spinner("এআই ভাবছে..."):
                 try:
-                    res = model.generate_content("বইয়ের জন্য ১০টি চমৎকার চ্যাপ্টার আউটলাইন দাও।")
+                    res = ai_model.generate_content("বইয়ের জন্য ১০টি চমৎকার চ্যাপ্টার আউটলাইন দাও।")
                     st.write(res.text)
-                except Exception as e: st.error(f"এরর: {e}")
+                except Exception as e:
+                    st.error(f"এরর: {e}. অন্য ইঞ্জিন ট্রাই করুন।")
 
     st.markdown("---")
-    st.caption(f"Nexus Prime Pro | Engine: {active_model_id} | 2026")
+    st.caption(f"Nexus Prime Pro | Engine: {selected_model} | 2026")
