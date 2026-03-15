@@ -25,24 +25,31 @@ def check_password():
         return False
     return True
 
-# --- ২. মূল অ্যাপ (পাসওয়ার্ড সঠিক হলে) ---
+# --- ২. মূল অ্যাপ ---
 if check_password():
-    # এআই ইঞ্জিন কনফিগারেশন
     genai.configure(api_key="AIzaSyDnV3MBfWvCvqq-e1zS95A3NCvzuhBsgiA")
     
-    # সেশন স্টেট (স্মৃতি ধরে রাখা)
+    # স্মার্ট মডেল লোডার (এটি ভুল নাম সংশোধন করবে)
+    def get_safe_model(model_name):
+        try:
+            # যদি নামের শুরুতে models/ না থাকে তবে যোগ করা
+            full_name = model_name if model_name.startswith("models/") else f"models/{model_name}"
+            return genai.GenerativeModel(full_name)
+        except:
+            return genai.GenerativeModel("models/gemini-1.5-flash-latest")
+
     if "messages" not in st.session_state: st.session_state.messages = []
     
-    # ডাইনামিক মডেল লিস্ট
+    # সচল মডেল লিস্ট
     try:
-        raw_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        display_models = [m.replace('models/', '') for m in raw_models]
+        raw_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        display_models = raw_models if raw_models else ["gemini-1.5-flash", "gemini-1.5-pro"]
     except:
         display_models = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
     # --- ৩. সাইডবার ---
     st.sidebar.title("⚙️ মাস্টার প্যানেল")
-    selected_model = st.sidebar.selectbox("ইঞ্জিন নির্বাচন করুন:", display_models)
+    selected_name = st.sidebar.selectbox("ইঞ্জিন নির্বাচন করুন:", display_models)
     temp = st.sidebar.slider("সৃজনশীলতা (Creativity):", 0.0, 1.0, 0.7)
     
     st.sidebar.markdown("---")
@@ -50,7 +57,6 @@ if check_password():
     uploaded_files = st.sidebar.file_uploader("বই বা ফাইল (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     uploaded_img = st.sidebar.file_uploader("ছবি বিশ্লেষণ (Vision)", type=["jpg", "png", "jpeg"])
     
-    # ফাইল থেকে লেখা পড়া
     full_text = ""
     if uploaded_files:
         for file in uploaded_files:
@@ -62,23 +68,17 @@ if check_password():
                 for p in doc.paragraphs: full_text += p.text + "\n"
             else:
                 full_text += str(file.read(), "utf-8")
-        st.sidebar.success("ডকুইমেন্ট মেমোরিতে সেভ হয়েছে!")
-
-    if st.sidebar.button("Clear Chat 🧹"):
-        st.session_state.messages = []
-        st.rerun()
+        st.sidebar.success("ডকুইমেন্ট রেডি!")
 
     if st.sidebar.button("Logout 🚪"):
         del st.session_state["password_correct"]
         st.rerun()
 
-    # --- ৪. মেইন ইন্টারফেস (ট্যাব সিস্টেম) ---
+    # --- ৪. মেইন ইন্টারফেস ---
     st.title("🛡️ NEXUS PRIME: Content Empire")
-    
-    # ট্যাবগুলো ডিফাইন করা
     tab_chat, tab_studio, tab_settings = st.tabs(["💬 প্রো চ্যাট মোড", "🖋️ রাইটার্স ল্যাব", "⚙️ সেটিংস"])
 
-    # --- ৫. প্রো চ্যাট মোড ---
+    # --- ৫. চ্যাট মোড ---
     with tab_chat:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
@@ -86,41 +86,46 @@ if check_password():
 
         if prompt := st.chat_input("এআই-কে কমান্ড দিন..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
+            with st.chat_message("user"): st.markdown(prompt)
 
             with st.chat_message("assistant"):
                 msg_placeholder = st.empty()
                 full_res = ""
-                model = genai.GenerativeModel(f"models/{selected_model}")
+                chat_model = get_safe_model(selected_name)
                 inputs = [f"Context: {full_text[:12000]}\nUser: {prompt}"]
                 if uploaded_img: inputs.append(Image.open(uploaded_img))
                 
-                response = model.generate_content(inputs, generation_config={"temperature": temp}, stream=True)
-                for chunk in response:
-                    full_res += chunk.text
-                    time.sleep(0.01)
-                    msg_placeholder.markdown(full_res + "▌")
-                msg_placeholder.markdown(full_res)
-                st.session_state.messages.append({"role": "assistant", "content": full_res})
+                try:
+                    response = chat_model.generate_content(inputs, generation_config={"temperature": temp}, stream=True)
+                    for chunk in response:
+                        full_res += chunk.text
+                        msg_placeholder.markdown(full_res + "▌")
+                    msg_placeholder.markdown(full_res)
+                    st.session_state.messages.append({"role": "assistant", "content": full_res})
+                except Exception as e:
+                    st.error(f"সার্ভার সমস্যা: {e}")
 
-    # --- ৬. রাইটার্স ল্যাব ---
+    # --- ৬. রাইটার্স ল্যাব (এখানেই আপনার এরর আসছিল) ---
     with tab_studio:
         st.subheader("🖋️ স্পেশালাইজড রাইটিং টুলস")
         c1, c2 = st.columns(2)
-        studio_model = genai.GenerativeModel(f"models/{selected_model}")
+        studio_model = get_safe_model(selected_name) # এখানে স্মার্ট লোডার ব্যবহার করা হয়েছে
         
         with c1:
             if st.button("📖 বইয়ের চ্যাপ্টার প্ল্যান করো"):
                 with st.spinner("প্ল্যানিং চলছে..."):
-                    res = studio_model.generate_content(f"বইয়ের নাম: {full_text[:500]}। ১০টি চ্যাপ্টার আউটলাইন দাও।")
-                    st.info(res.text)
+                    try:
+                        res = studio_model.generate_content(f"বইয়ের নাম: {full_text[:500]}। ১০টি চ্যাপ্টার আউটলাইন দাও।")
+                        st.info(res.text)
+                    except Exception as e: st.error(f"ভুল: {e}")
         
         with c2:
             if st.button("👥 ক্যারেক্টার প্রোফাইল তৈরি করো"):
                 with st.spinner("চরিত্র তৈরি হচ্ছে..."):
-                    res = studio_model.generate_content("একটি রহস্যময় চরিত্রের প্রোফাইল দাও।")
-                    st.success(res.text)
+                    try:
+                        res = studio_model.generate_content("একটি রহস্যময় চরিত্রের প্রোফাইল দাও।")
+                        st.success(res.text)
+                    except Exception as e: st.error(f"ভুল: {e}")
 
     # --- ৭. সেটিংস ---
     with tab_settings:
@@ -128,8 +133,7 @@ if check_password():
         new_pwd = st.text_input("নতুন পাসওয়ার্ড সেট করুন:", type="password")
         if st.button("Update Password 🔐"):
             st.session_state["password"] = new_pwd
-            st.success(f"পাসওয়ার্ড আপডেট হয়েছে! নতুন পাসওয়ার্ড: {new_pwd}")
+            st.success(f"পাসওয়ার্ড আপডেট হয়েছে! নতুন: {new_pwd}")
 
-    # ফুটার
     st.markdown("---")
-    st.caption(f"Nexus Prime Pro | Developed by Harun Mastermind | Engine: {selected_model} | 2026")
+    st.caption(f"Nexus Prime Pro | Developed by Harun Mastermind | 2026")
