@@ -5,8 +5,8 @@ import PyPDF2
 import docx
 import time
 
-# --- ১. অ্যাপ ও পাসওয়ার্ড সেটআপ ---
-st.set_page_config(page_title="Nexus Prime Ultra", page_icon="🦾", layout="wide")
+# --- ১. অ্যাপ ও পাসওয়ার্ড ---
+st.set_page_config(page_title="Nexus Prime Final", page_icon="🦾", layout="wide")
 
 if "password" not in st.session_state: 
     st.session_state["password"] = "Emonkhan1995@@"
@@ -15,7 +15,7 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.title("🛡️ NEXUS PRIME: LOGIN")
         pwd = st.text_input("মাস্টারমাইন্ড পাসওয়ার্ড:", type="password")
-        if st.button("Unlock Empire 🔓"):
+        if st.button("Unlock"):
             if pwd == st.session_state["password"]:
                 st.session_state["password_correct"] = True
                 st.rerun()
@@ -24,88 +24,89 @@ def check_password():
     return True
 
 if check_password():
-    # --- ২. এআই ইঞ্জিন কনফিগারেশন (সরাসরি ফিক্স) ---
+    # --- ২. এআই ইঞ্জিন কনফিগারেশন ---
     genai.configure(api_key="AIzaSyDnV3MBfWvCvqq-e1zS95A3NCvzuhBsgiA")
     
-    # এটি আপনার পিসিতে থাকা সব মডেলকে অটো-স্ক্যান করবে
+    # এটি সার্ভার থেকে একদম তাজা মডেলের লিস্ট নিয়ে আসবে
     @st.cache_resource
-    def list_valid_models():
+    def get_working_models():
         try:
-            # সরাসরি নামগুলো সংগ্রহ করা
-            return [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        except:
-            # যদি স্ক্যান ফেইল করে তবে এই ৩টি স্ট্যান্ডার্ড নাম ব্যবহার করবে
-            return ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
+            # সরাসরি এপিআই থেকে লিস্ট সংগ্রহ
+            valid_models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    # আমরা শুধু মূল নামগুলো নিব (যেমন: gemini-1.5-flash)
+                    valid_models.append(m.name.split('/')[-1])
+            return valid_models
+        except Exception as e:
+            # যদি সার্ভার থেকে লিস্ট না পায় তবে সেফ অপশন
+            return ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
 
-    available_models = list_valid_models()
+    model_list = get_clean_models = get_working_models()
 
-    # --- ৩. সাইডবার কন্ট্রোল ---
+    # --- ৩. সাইডবার ---
     st.sidebar.title("⚙️ মাস্টার প্যানেল")
     
-    # ইউজারকে সঠিক মডেল বেছে নেওয়ার সুযোগ দেওয়া
-    selected_model_path = st.sidebar.selectbox("ইঞ্জিন নির্বাচন করুন:", available_models)
+    # এখানে ইউজার শুধু সচল মডেলগুলোই দেখতে পাবে
+    selected_engine = st.sidebar.selectbox("সচল ইঞ্জিন বেছে নিন:", model_list)
+    st.sidebar.success(f"অ্যাক্টিভ: {selected_engine}")
     
-    st.sidebar.success(f"অ্যাক্টিভ: {selected_model_path}")
-    temp = st.sidebar.slider("সৃজনশীলতা (Creativity):", 0.0, 1.0, 0.7)
+    uploaded_files = st.sidebar.file_uploader("বই বা ফাইল আপলোড করুন", type=["pdf", "docx", "txt"], accept_multiple_files=True)
     
-    uploaded_files = st.sidebar.file_uploader("বই বা ফাইল (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
-    
-    full_text = ""
+    full_content = ""
     if uploaded_files:
         for file in uploaded_files:
             if file.type == "application/pdf":
-                reader = PyPDF2.PdfReader(file)
-                for page in reader.pages: full_text += page.extract_text()
+                pdf = PyPDF2.PdfReader(file)
+                for page in pdf.pages: full_content += page.extract_text()
             elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 doc = docx.Document(file)
-                for p in doc.paragraphs: full_text += p.text + "\n"
-        st.sidebar.info("বই মেমোরিতে সেভ হয়েছে!")
+                for p in doc.paragraphs: full_content += p.text + "\n"
+        st.sidebar.info("ডেটা লোড হয়েছে!")
 
-    # --- ৪. মেইন ইন্টারফেস (ট্যাব সিস্টেম) ---
+    # --- ৪. মেইন অ্যাপ ---
     st.title("🛡️ NEXUS PRIME: Content Empire")
-    tab_chat, tab_studio = st.tabs(["💬 প্রো চ্যাট মোড", "🖋️ রাইটার্স ল্যাব"])
+    t1, t2 = st.tabs(["💬 চ্যাট", "🖋️ স্টুডিও"])
 
-    # এআই মডেল লোড করা (মাস্টার ফিক্স)
-    # আমরা এখানে সরাসরি models/ সহ পাথ ব্যবহার করছি যেন v1beta এরর না আসে
-    ai_instance = genai.GenerativeModel(model_name=selected_model_path)
+    # এআই মডেল ইনিশিয়ালাইজেশন
+    # আমরা এখানে সরাসরি নাম ব্যবহার করব যেন ভার্সন সমস্যা না হয়
+    try:
+        current_ai = genai.GenerativeModel(model_name=selected_engine)
+    except:
+        current_ai = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
-    # --- ৫. চ্যাট মোড ---
-    with tab_chat:
+    with t1:
         if "messages" not in st.session_state: st.session_state.messages = []
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]): st.markdown(m["content"])
 
-        if prompt := st.chat_input("এআই-কে জিজ্ঞাসা করুন..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
+        if p := st.chat_input("এআই-কে কমান্ড দিন..."):
+            st.session_state.messages.append({"role": "user", "content": p})
+            with st.chat_message("user"): st.markdown(p)
 
             with st.chat_message("assistant"):
-                res_placeholder = st.empty()
-                full_response = ""
+                box = st.empty()
+                full_r = ""
                 try:
-                    context = f"Context: {full_text[:10000]}\n\nUser: " if full_text else ""
-                    # স্ট্রিমিং রেসপন্স
-                    response = ai_instance.generate_content(context + prompt, stream=True)
+                    ctx = f"বইয়ের তথ্য: {full_content[:8000]}\n\nইউজার প্রশ্ন: " if full_content else ""
+                    response = current_ai.generate_content(ctx + p, stream=True)
                     for chunk in response:
-                        full_response += chunk.text
-                        res_placeholder.markdown(full_response + "▌")
-                    res_placeholder.markdown(full_response)
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                        full_r += chunk.text
+                        box.markdown(full_r + "▌")
+                    box.markdown(full_r)
+                    st.session_state.messages.append({"role": "assistant", "content": full_r})
                 except Exception as e:
-                    st.error(f"এরর ধরা পড়েছে: {e}")
+                    st.error(f"সার্ভার এরর: {e}")
 
-    # --- ৬. রাইটার্স ল্যাব ---
-    with tab_studio:
-        st.subheader("🖋️ স্পেশালাইজড টুলস")
-        if st.button("📖 চ্যাপ্টার আউটলাইন তৈরি করো"):
-            with st.spinner("মাস্টারমাইন্ড এআই জেনারেট করছে..."):
+    with t2:
+        st.subheader("🖋️ রাইটিং ল্যাব")
+        if st.button("📖 ১০টি চ্যাপ্টার আউটলাইন দাও"):
+            with st.spinner("মাস্টারমাইন্ড এআই ভাবছে..."):
                 try:
-                    # সরাসরি কন্টেন্ট জেনারেশন
-                    res = ai_instance.generate_content("একটি চমৎকার বইয়ের জন্য ১০টি আকর্ষণীয় চ্যাপ্টার আউটলাইন দাও।")
-                    st.success("আউটলাইন তৈরি সম্পন্ন!")
+                    res = current_ai.generate_content("একটি চমৎকার বইয়ের ১০টি চ্যাপ্টার আউটলাইন দাও।")
                     st.markdown(res.text)
                 except Exception as e:
-                    st.error(f"দুঃখিত, এই ইঞ্জিনটি সাপোর্ট করছে না। সাইডবার থেকে অন্য একটি ইঞ্জিন (যেমন gemini-pro) বেছে নিন। এরর: {e}")
+                    st.error(f"এই মডেলটি কাজ করছে না। সাইডবার থেকে অন্য ইঞ্জিন নিন। এরর: {e}")
 
     st.markdown("---")
-    st.caption(f"Nexus Prime Pro | Developed by Harun Mastermind | Engine: {selected_model_path} | 2026")
+    st.caption(f"Nexus Prime Pro | Developed by Harun Mastermind | 2026")
