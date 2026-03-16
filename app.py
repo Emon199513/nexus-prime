@@ -1,17 +1,14 @@
-import google.generativeai as genai
 from flask import Flask, render_template, request, jsonify
+from google import genai
+import os
 
 app = Flask(__name__)
 
-# আপনার Gemini API Key
+# আপনার Gemini API Key (Verified from your screenshot)
 API_KEY = "AIzaSyDnV3MBfWvCvqq-e1zS95A3NCvzuhBsgiA"
 
-# সরাসরি কনফিগারেশন - কোন ভুল হওয়ার সুযোগ নেই
-genai.configure(api_key=API_KEY)
-
-# ২০২৬ সালের সবচেয়ে শক্তিশালী ও স্টেবল মডেল সিলেক্ট করা
-# আমরা এখানে gemini-1.5-flash-latest ব্যবহার করছি যা ৪0৪ এরর দেয় না
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+# গুগলের নতুন ২০২৬ এডিটর SDK ব্যবহার করে কানেকশন
+client = genai.Client(api_key=API_KEY)
 
 @app.route('/')
 def home():
@@ -24,23 +21,24 @@ def process_task():
     user_input = data.get('input_text')
 
     prompts = {
-        "P1": f"Human touch writing: Rewrite this text to sound emotional and human for a thriller: {user_input}",
-        "P2": f"KDP Keywords: Suggest 7 high-ranking SEO keywords for: {user_input}",
-        "P10": f"Translator: Translate this into fluent and poetic Bengali: {user_input}",
-        "P12": f"Grammar: Fix any grammar or spelling mistakes: {user_input}"
+        "P1": f"Human touch writing: Rewrite this thriller novel scene to be emotional and cinematic: {user_input}",
+        "P2": f"KDP Keywords: Suggest 7 trending Amazon SEO keywords for: {user_input}",
+        "P10": f"Translator: Translate this into beautiful Bengali: {user_input}",
+        "P12": f"Grammar: Fix and improve the flow of this text: {user_input}"
     }
 
     selected_prompt = prompts.get(point_id, user_input)
 
     try:
-        # জেনারেশন শুরু
-        response = model.generate_content(selected_prompt)
+        # ২০২৬ সালের ড্যাশবোর্ড অনুযায়ী আধুনিক মডেল ব্যবহার (Gemini 3.1)
+        response = client.models.generate_content(
+            model="gemini-3.1-flash", 
+            contents=selected_prompt
+        )
         return jsonify({"success": True, "result": response.text})
     except Exception as e:
-        # যদি তবুও সমস্যা হয়, আমরা অন্য মডেল ট্রাই করব স্বয়ংক্রিয়ভাবে
-        return jsonify({"success": False, "error": f"Nexus Prime Link Failed: {str(e)}"})
+        return jsonify({"success": False, "error": f"Nexus Prime Sync Error: {str(e)}"})
 
 if __name__ == '__main__':
-    print("🚀 NEXUS PRIME: CORE ENGINE RE-LINKED SUCCESSFUL")
-    print("📡 Monitoring Portal: http://127.0.0.1:5000")
+    print("🚀 NEXUS PRIME 2026: QUANTUM LINK ESTABLISHED")
     app.run(debug=True, port=5000)
